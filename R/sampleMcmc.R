@@ -26,7 +26,7 @@
 #'
 #' @param dataParList a named list with pre-computed \code{Qg}, \code{iQg}, \code{RQg}, \code{detQg}, \code{rLPar}
 #'   parameters
-#' @param updater a named list, specifying which conditional updaters should be ommitted
+#' @param updater a named list, specifying which conditional updaters should be ommitted. Choosing a value for `OutlierDiscounting` in (0,1) will enable the method to detect outliers. A value of `OutlierDiscounting` equal to 0 will disable the outlier detection.
 #' @param fromPrior whether prior (TRUE) or posterior (FALSE) is to be sampled
 #' @param alignPost boolean flag indicating whether the posterior of each chains should be aligned
 #' @param engine The toolset used in MCMC chain. Currently only
@@ -61,7 +61,7 @@
 #'   this argument involves cases when some of the model parameters are known and have to be fixed. However, such
 #'   tweaks of the sampling scheme should be done with caution, as if compromized they would lead to erroneuos
 #'   results.
-#'
+#' 
 #'
 #' @seealso \code{\link{Hmsc}}
 #'
@@ -84,7 +84,9 @@
              verbose, adaptNf=rep(transient,hM$nr),
              nChains=1, nParallel=1,
              useSocket=TRUE,
-             dataParList=NULL, updater=list(Gamma2=FALSE, GammaEta=FALSE),
+             dataParList=NULL, updater=list(Gamma2=FALSE, 
+                                            GammaEta=FALSE,
+                                            OutlierDiscounting=0),
              fromPrior=FALSE, alignPost=TRUE, engine="R")
 {
     ## prior sampling can pass preparation and sampleChain, and
@@ -212,6 +214,13 @@
       if(updaterWarningFlag)
          message("setting updater$GammaEta=FALSE due to absence of random effects included to the model")
    }
+
+    if (!is.numeric(updater$OutlierDiscounting) || updater$OutlierDiscounting < 0 || updater$OutlierDiscounting >= 1) {
+        updater$OutlierDiscounting = 0
+        if (updaterWarningFlag)
+            message("setting updater$OutlierDiscounting=0 as it must be a number in [0,1)")
+    }
+
    # NNGP & GPP models will give an error in updateGammaEta()
    if (!identical(updater$GammaEta, FALSE) &&
        any(sapply(hM$rL,
@@ -369,6 +378,13 @@
     verbose = obj$verbose
     initPar = obj$initPar
 
+    # --- MCMC variables for the outlier discounting ---
+    ## Indicator for every cell being an outlier
+    outlierIndicators = matrix(FALSE, nrow(Y), ncol(Y))
+    ## Store the posterior outlier counts for cells
+    outlierPostCount = matrix(0, nrow(Y), ncol(Y))
+    # -- End of defining outlier discounting MCMC variables --
+
     ## start
     if(nChains>1)
         cat(sprintf("Computing chain %d\n", chain))
@@ -422,13 +438,18 @@
     }
 
     postList = vector("list", samples)
-    failed <- numeric(15) # counts of failed try(update*())s
+    failed <- numeric(16) # counts of failed try(update*())s
     names(failed) <- c("Gamma2", "GammaEta", "BetaLambda", "wRRR",
                        "BetaSel", "GammaV", "Rho", "LambdaPriors",
                        "wRRRPriors", "Eta", "Alpha",
-                       "invSigma", "Z", "Nf", "LatentLoadingOrder")
+                       "invSigma", "Z", "Nf", "LatentLoadingOrder", "outlierIndicators")
 ###--> Iterations starts here <--
     for(iter in seq_len(transient + samples*thin)) {
+
+        ## In the MCMC loop mask the current outliers
+        Ymasked <- Y
+        Ymasked[outlierIndicators] <- NA
+
         if(!identical(updater$Gamma2, FALSE)) {
             out = try(updateGamma2(Z=Z,Gamma=Gamma,iV=iV,iSigma=iSigma,
                                    Eta=Eta,Lambda=Lambda, Loff=Loff,X=X,Pi=Pi,
@@ -462,7 +483,7 @@
         }
 
         if(!identical(updater$BetaLambda, FALSE)){
-            BetaLambdaList = try(updateBetaLambda(Y=Y,Z=Z,Gamma=Gamma,iV=iV,
+            BetaLambdaList = try(updateBetaLambda(Y=Ymasked,Z=Z,Gamma=Gamma,iV=iV,
                                                   iSigma=iSigma,Eta=Eta,
                                                   Psi=Psi,Delta=Delta,iQ=iQg[,,rho],
                                                   Loff=Loff,X=X,Tr=Tr,
@@ -556,7 +577,7 @@
         }
 
         if(!identical(updater$Eta, FALSE))
-            out = try(updateEta(Y=Y,Z=Z,Beta=Beta,iSigma=iSigma,Eta=Eta,
+            out = try(updateEta(Y=Ymasked,Z=Z,Beta=Beta,iSigma=iSigma,Eta=Eta,
                                 Lambda=Lambda,Alpha=Alpha, rLPar=rLPar, Loff=Loff,X=X,
                                 Pi=Pi,dfPi=dfPi,rL=hM$rL), silent = TRUE)
         if (!inherits(out, "try-error"))
@@ -573,7 +594,7 @@
             failed["Alpha"] <- failed["Alpha"] + 1
 
         if(!identical(updater$InvSigma, FALSE))
-            out = try(updateInvSigma(Y=Y,Z=Z,Beta=Beta,iSigma=iSigma,
+            out = try(updateInvSigma(Y=Ymasked,Z=Z,Beta=Beta,iSigma=iSigma,
                                      Eta=Eta,Lambda=Lambda, distr=distr,Loff=Loff,X=X,
                                      Pi=Pi,dfPi=dfPi,rL=hM$rL, aSigma=aSigma,
                                      bSigma=bSigma), silent = TRUE)
@@ -583,7 +604,7 @@
             failed["invSigma"] <- failed["invSigma"] + 1
 
         if(!identical(updater$Z, FALSE)) {
-            out = try(updateZ(Y=Y,Z=Z,Beta=Beta,iSigma=iSigma,Eta=Eta,
+            out = try(updateZ(Y=Ymasked,Z=Z,Beta=Beta,iSigma=iSigma,Eta=Eta,
                               Lambda=Lambda, Loff=Loff,X=X,Pi=Pi,dfPi=dfPi,distr=distr,
                               rL=hM$rL))
             if (!inherits(out, "try-error"))
@@ -637,7 +658,20 @@
             }
         }
 
+        if(updater$OutlierDiscounting > 0) {
+            out = try(updateOutlierIndicators(Y.orig=Y,
+                            Beta=Beta,iSigma=iSigma,Eta=Eta,
+                            Lambda=Lambda, Loff=Loff, X=X, Pi=Pi,dfPi=dfPi,distr=distr, rL=hM$rL, odEps=updater$OutlierDiscounting))
+            if (!inherits(out, "try-error")) {
+                outlierIndicators <- out
+            } else if (iter > transient) {
+                failed["outlierIndicators"] <- failed["outlierIndicators"] + 1
+            }
+        }
+
         if((iter > transient) && ((iter-transient) %% thin == 0)){
+            outlierPostCount <- outlierPostCount + outlierIndicators
+
             postList[[(iter-transient)/thin]] =
                 combineParameters(Beta=Beta,BetaSel=BetaSel,wRRR = wRRR,
                                   Gamma=Gamma,iV=iV,rho=rho,iSigma=iSigma,
@@ -651,7 +685,7 @@
                                   XRRRScalePar=hM$XRRRScalePar,nt=hM$nt,
                                   TrScalePar=hM$TrScalePar,
                                   TrInterceptInd=hM$TrInterceptInd,
-                                  rhopw=rhopw)
+                                  rhopw=rhopw, outlierIndicators=outlierIndicators)
         }
         postList$failedUpdates <- failed
         if((verbose > 0) && (iter%%verbose == 0)){
@@ -666,5 +700,7 @@
         }
     }
 ### Iterations stop here: return
+
+    postList$outlierPostProb = outlierPostCount / samples
     postList
 }
