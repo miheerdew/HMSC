@@ -27,6 +27,7 @@ updateOutlierIndicators = function(Y.orig,Beta,iSigma,Eta,Lambda, Loff,X,Pi,dfPi
       }
    }
 
+   E = Reduce("+", c(list(LFix), LRan))
    if(!is.null(Loff)) E = E + Loff
 
    # Variable to store the log-likelihoods of each entry of Y
@@ -48,7 +49,7 @@ updateOutlierIndicators = function(Y.orig,Beta,iSigma,Eta,Lambda, Loff,X,Pi,dfPi
    # For species that follow a Poisson model
    indColPoisson = (distr[,1]==3)
    likelihood_Y[ , indColPoisson] = dpois(
-            Y.orig[ , indColPoisson], 
+            Y.orig[ , indColPoisson],
             lambda=exp(E[ , indColPoisson]))
 
    outlierProb = odEps/(odEps + (1-odEps)*likelihood_Y)

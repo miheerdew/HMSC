@@ -166,5 +166,10 @@ test_that("sampleMCMC returns m object of right size",{
    m = sampleMcmc(TD$m,samples=1)
    expect_equal(length(m),74)
    expect_equal(length(m$postList[[1]][[1]]),13)
+
+   m1 = sampleMcmc(TD$m, samples=1, updater = list(OutlierDiscounting = 0.2))
+   expect_equal(length(m1),74)
+   # additional object
+   expect_equal(length(m1$postList[[1]][[1]]),14)
 })
 
