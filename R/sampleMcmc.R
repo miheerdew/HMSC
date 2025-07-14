@@ -61,7 +61,7 @@
 #'   this argument involves cases when some of the model parameters are known and have to be fixed. However, such
 #'   tweaks of the sampling scheme should be done with caution, as if compromized they would lead to erroneuos
 #'   results.
-#' 
+#'
 #'
 #' @seealso \code{\link{Hmsc}}
 #'
@@ -84,7 +84,7 @@
              verbose, adaptNf=rep(transient,hM$nr),
              nChains=1, nParallel=1,
              useSocket=TRUE,
-             dataParList=NULL, updater=list(Gamma2=FALSE, 
+             dataParList=NULL, updater=list(Gamma2=FALSE,
                                             GammaEta=FALSE,
                                             OutlierDiscounting=0),
              fromPrior=FALSE, alignPost=TRUE, engine="R")
@@ -381,8 +381,6 @@
     # --- MCMC variables for the outlier discounting ---
     ## Indicator for every cell being an outlier
     outlierIndicators = matrix(FALSE, nrow(Y), ncol(Y))
-    ## Store the posterior outlier counts for cells
-    outlierPostCount = matrix(0, nrow(Y), ncol(Y))
     # -- End of defining outlier discounting MCMC variables --
 
     ## start
@@ -670,8 +668,6 @@
         }
 
         if((iter > transient) && ((iter-transient) %% thin == 0)){
-            outlierPostCount <- outlierPostCount + outlierIndicators
-
             postList[[(iter-transient)/thin]] =
                 combineParameters(Beta=Beta,BetaSel=BetaSel,wRRR = wRRR,
                                   Gamma=Gamma,iV=iV,rho=rho,iSigma=iSigma,
@@ -685,7 +681,9 @@
                                   XRRRScalePar=hM$XRRRScalePar,nt=hM$nt,
                                   TrScalePar=hM$TrScalePar,
                                   TrInterceptInd=hM$TrInterceptInd,
-                                  rhopw=rhopw, outlierIndicators=outlierIndicators)
+                                  rhopw=rhopw,
+                                  outlierIndicators=if(updater$OutlierDiscounting > 0)
+                                     outlierIndicators else NULL)
         }
         postList$failedUpdates <- failed
         if((verbose > 0) && (iter%%verbose == 0)){
@@ -700,7 +698,5 @@
         }
     }
 ### Iterations stop here: return
-
-    postList$outlierPostProb = outlierPostCount / samples
     postList
 }
