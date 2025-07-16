@@ -37,7 +37,7 @@ updateOutlierIndicators = function(Y.orig,Beta,iSigma,Eta,Lambda, Loff,X,Pi,dfPi
 
    # For species that follow a normal model
    indColNormal = (distr[,1]==1)
-   likelihood_Y[,indColNormal] = dnorm(Y.orig[,indColNormal], mean=E[,indColNormal], sd=std[,indColNormal], log=TRUE)
+   likelihood_Y[,indColNormal] = dnorm(Y.orig[,indColNormal], mean=E[,indColNormal], sd=std[,indColNormal])
 
    # For species that follow a Probit model
    indColProbit = (distr[,1]==2)
